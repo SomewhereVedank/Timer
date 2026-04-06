@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>stopwatch</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f0ede8;
+    --fg: #1c1c1a;
+    --muted: #9a9890;
+    --line: #d8d5ce;
+    --face: #faf8f4;
+    --sub: #ece9e3;
+    --accent: #4a7c59;
+    --warn: #a05a3a;
+  }
+  :root.dark {
+    --bg: #141412;
+    --fg: #f0ede6;
+    --muted: #9a9690;
+    --line: #2a2825;
+    --face: #1c1a18;
+    --sub: #201e1c;
+    --accent: #72b886;
+    --warn: #d48060;
+  }
+  html, body { height: 100%; background: var(--bg); color: var(--fg); font-family: 'DM Mono', monospace; overflow: hidden; transition: background 0.3s, color 0.3s; }
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: radial-gradient(circle, var(--line) 1px, transparent 1px);
+    background-size: 28px 28px;
+    opacity: 0.35;
+    pointer-events: none;
+    z-index: 0;
+    transition: opacity 0.3s;
+  }
+
+  /* dial glow */
+  .dial-outer {
+    transition: background 0.3s, border-color 0.3s, box-shadow 0.6s;
+  }
+  .dial-outer.running {
+    box-shadow: 0 0 0 1px var(--line), 0 0 40px 6px rgba(140,128,108,0.15), 0 4px 24px rgba(0,0,0,0.12);
+  }
+  :root.dark .dial-outer.running {
+    box-shadow: 0 0 0 1px var(--line), 0 0 56px 10px rgba(220,200,160,0.09), 0 4px 24px rgba(0,0,0,0.5);
+  }
+
+  /* ── TABS ── */
+  .tabs {
+    display: flex;
+    gap: 0;
+    z-index: 1;
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .tab {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    border: none;
+    background: var(--face);
+    color: var(--muted);
+    cursor: pointer;
+    padding: 8px 20px;
+    transition: all 0.15s;
+    border-right: 1px solid var(--line);
+  }
+  .tab:last-child { border-right: none; }
+  .tab.active { background: var(--fg); color: var(--face); }
+  .tab:not(.active):hover { color: var(--fg); }
+
+  .watch-wrap {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+  }
+
+  .label {
+    font-size: 9px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--muted);
+    height: 14px;
+  }
+
+  .dial-outer {
+    width: 264px;
+    height: 264px;
+    border-radius: 50%;
+    background: var(--face);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+    border: 1px solid var(--line);
+    position: relative;
+    transition: background 0.3s, border-color 0.3s;
+  }
+
+  .dial-inner {
+    width: 260px;
+    height: 260px;
+    border-radius: 50%;
+    background: var(--face);
+    position: relative;
+    transition: background 0.3s;
+  }
+
+  .digital {
+    position: absolute;
+    bottom: 72px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    white-space: nowrap;
+    transition: color 0.3s;
+  }
+
+  /* pomodoro ring arc progress */
+  #pomo-arc { transition: stroke 0.5s; }
+
+  /* pomo custom time inputs */
+  .pomo-config {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    z-index: 1;
+  }
+  .pomo-field {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .pomo-field label {
+    font-size: 8px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .pomo-field-row {
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    overflow: hidden;
+    background: var(--face);
+  }
+  .pomo-stepper {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 5px 8px;
+    transition: color 0.15s;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+  .pomo-stepper:hover { color: var(--fg); }
+  .pomo-val {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    color: var(--fg);
+    width: 28px;
+    text-align: center;
+    border: none;
+    background: transparent;
+    outline: none;
+    padding: 5px 0;
+  }
+  /* hide number input arrows */
+  .pomo-val::-webkit-outer-spin-button,
+  .pomo-val::-webkit-inner-spin-button { -webkit-appearance: none; }
+  .pomo-val[type=number] { -moz-appearance: textfield; }
+  .pomo-sep {
+    font-size: 9px;
+    color: var(--line);
+    letter-spacing: 0;
+    padding: 0 2px;
+  }
+  .pomo-presets {
+    display: flex;
+    gap: 6px;
+  }
+  .preset-btn {
+    font-family: 'DM Mono', monospace;
+    font-size: 8px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    border: 1px solid var(--line);
+    background: var(--face);
+    color: var(--muted);
+    cursor: pointer;
+    padding: 4px 10px;
+    border-radius: 2px;
+    transition: all 0.15s;
+  }
+  .preset-btn:hover { border-color: var(--fg); color: var(--fg); }
+  .preset-btn.active { border-color: var(--fg); background: var(--fg); color: var(--face); }
+
+  .controls {
+    display: flex;
+    gap: 16px;
+    z-index: 1;
+  }
+
+  button {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    border: 1px solid var(--line);
+    background: var(--face);
+    color: var(--muted);
+    cursor: pointer;
+    padding: 10px 24px;
+    border-radius: 2px;
+    transition: all 0.15s;
+  }
+  button:hover { border-color: var(--fg); color: var(--fg); }
+  button:disabled { opacity: 0.3; cursor: default; pointer-events: none; }
+  #btn-start { border-color: var(--fg); color: var(--fg); }
+  #btn-start:hover { background: var(--fg); color: var(--face); }
+  #pbtn-start { border-color: var(--fg); color: var(--fg); }
+  #pbtn-start:hover { background: var(--fg); color: var(--face); }
+
+  .laps {
+    z-index: 1;
+    width: 280px;
+    max-height: 110px;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  .laps::-webkit-scrollbar { display: none; }
+  .lap-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--line);
+    animation: fadeIn 0.2s ease;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+  }
+  .lap-item:first-child { border-top: 1px solid var(--line); }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(-3px); } to { opacity:1; transform:translateY(0); } }
+  .lap-num { color: var(--muted); }
+  .lap-time { color: var(--fg); }
+  .lap-item.fastest .lap-time { color: var(--accent); }
+  .lap-item.slowest .lap-time { color: var(--warn); }
+
+  /* pomo session log */
+  .pomo-log {
+    z-index: 1;
+    width: 280px;
+    max-height: 110px;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  .pomo-log::-webkit-scrollbar { display: none; }
+  .pomo-entry {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--line);
+    animation: fadeIn 0.2s ease;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+  }
+  .pomo-entry:first-child { border-top: 1px solid var(--line); }
+  .pomo-entry .entry-type { color: var(--muted); }
+  .pomo-entry .entry-done { color: var(--accent); }
+  .pomo-entry .entry-skip { color: var(--warn); }
+
+  .theme-toggle {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    background: var(--face);
+    color: var(--muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-size: 14px;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    z-index: 10;
+    letter-spacing: 0;
+  }
+  .theme-toggle:hover { border-color: var(--fg); color: var(--fg); }
+
+  /* section visibility */
+  .sw-only, .pm-only { transition: opacity 0.2s; }
+  .hidden { display: none !important; }
+
+  /* total hours studied panel */
+  .hours-panel {
+    position: fixed;
+    left: calc(50% - 260px);
+    top: 50%;
+    transform: translate(-100%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    z-index: 10;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+  }
+  .hours-panel.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .hours-panel-box {
+    border: 1px solid transparent;
+    border-right-color: rgba(255,255,255,0.55);
+    border-bottom-color: rgba(255,255,255,0.55);
+    border-top-color: rgba(0,0,0,0.08);
+    border-left-color: rgba(0,0,0,0.08);
+    background: transparent;
+    box-shadow: inset 2px 2px 7px rgba(0,0,0,0.09), inset 0 1px 3px rgba(0,0,0,0.06);
+    border-radius: 2px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    min-width: 88px;
+  }
+  :root.dark .hours-panel-box {
+    border-right-color: rgba(255,255,255,0.05);
+    border-bottom-color: rgba(255,255,255,0.05);
+    border-top-color: rgba(0,0,0,0.4);
+    border-left-color: rgba(0,0,0,0.4);
+    box-shadow: inset 2px 2px 9px rgba(0,0,0,0.4), inset 0 1px 4px rgba(0,0,0,0.3);
+  }
+  .hours-panel-label {
+    font-size: 8px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.5;
+  }
+  .hours-panel-value {
+    font-size: 22px;
+    letter-spacing: 0.04em;
+    color: var(--fg);
+    font-weight: 300;
+    line-height: 1;
+  }
+  .hours-panel-sub {
+    font-size: 8px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .hours-panel-sessions {
+    font-size: 9px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .hours-panel-reset {
+    font-size: 8px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 5px 10px;
+    border-radius: 2px;
+    transition: all 0.15s;
+    width: 100%;
+  }
+  .hours-panel-reset:hover { border-color: var(--warn); color: var(--warn); }
+</style>
+</head>
+<body>
+
+<div class="tabs">
+  <button class="tab active" id="tab-sw">stopwatch</button>
+  <button class="tab" id="tab-pm">pomodoro</button>
+</div>
+
+<div class="watch-wrap">
+  <span class="label" id="mode-label">elapsed</span>
+
+  <div class="dial-outer">
+    <div class="dial-inner">
+      <svg id="dial-svg" width="260" height="260" viewBox="0 0 260 260" style="position:absolute;top:0;left:0;">
+
+        <!-- pomodoro arc (behind everything) -->
+        <circle cx="130" cy="130" r="122"
+          fill="none"
+          stroke-width="3"
+          stroke="var(--line)"
+          stroke-dasharray="766.6"
+          stroke-dashoffset="0"
+          stroke-linecap="round"
+          transform="rotate(-90 130 130)"
+          id="pomo-arc-bg"
+          class="pm-only hidden"
+        />
+        <circle cx="130" cy="130" r="122"
+          fill="none"
+          stroke-width="3"
+          stroke="var(--fg)"
+          stroke-dasharray="766.6"
+          stroke-dashoffset="766.6"
+          stroke-linecap="round"
+          transform="rotate(-90 130 130)"
+          id="pomo-arc"
+          class="pm-only hidden"
+        />
+
+        <!-- sub-dial circle (hours on stopwatch / session count on pomo) -->
+        <circle cx="130" cy="72" r="32" fill="var(--sub)" stroke="var(--line)" stroke-width="0.8"/>
+        <g id="sub-ticks"></g>
+        <line id="sub-hand" x1="130" y1="72" x2="130" y2="46" stroke="var(--fg)" stroke-width="1" stroke-linecap="round"/>
+        <circle cx="130" cy="72" r="2" fill="var(--fg)"/>
+
+        <!-- main ticks & numbers -->
+        <g id="main-ticks"></g>
+
+        <!-- second hand + tail -->
+        <line id="sec-hand" x1="130" y1="130" x2="130" y2="40" stroke="var(--fg)" stroke-width="1.2" stroke-linecap="round"/>
+        <line id="sec-tail" x1="130" y1="130" x2="130" y2="148" stroke="var(--fg)" stroke-width="1.2" stroke-linecap="round"/>
+
+        <!-- center cap -->
+        <circle cx="130" cy="130" r="3.5" fill="var(--fg)"/>
+        <circle cx="130" cy="130" r="1.5" fill="var(--face)"/>
+      </svg>
+
+      <div class="digital" id="digital">00:00:00</div>
+    </div>
+  </div>
+
+  <!-- STOPWATCH controls -->
+  <div class="controls sw-only" id="sw-controls">
+    <button id="btn-lap" disabled>lap</button>
+    <button id="btn-start">start</button>
+    <button id="btn-reset">reset</button>
+  </div>
+
+  <!-- POMODORO config -->
+  <div class="pm-only hidden" id="pm-config-wrap" style="display:flex;flex-direction:column;align-items:center;gap:10px;z-index:1;">
+    <div class="pomo-config">
+      <div class="pomo-field">
+        <label>focus</label>
+        <div class="pomo-field-row">
+          <button class="pomo-stepper" id="work-dn">−</button>
+          <input class="pomo-val" type="number" id="work-val" value="40" min="1" max="180">
+          <button class="pomo-stepper" id="work-up">+</button>
+        </div>
+      </div>
+      <span class="pomo-sep">·</span>
+      <div class="pomo-field">
+        <label>break</label>
+        <div class="pomo-field-row">
+          <button class="pomo-stepper" id="break-dn">−</button>
+          <input class="pomo-val" type="number" id="break-val" value="5" min="1" max="60">
+          <button class="pomo-stepper" id="break-up">+</button>
+        </div>
+      </div>
+    </div>
+    <div class="pomo-presets">
+      <button class="preset-btn active" data-work="40" data-break="5">40 / 5</button>
+      <button class="preset-btn" data-work="45" data-break="10">45 / 10</button>
+      <button class="preset-btn" data-work="50" data-break="10">50 / 10</button>
+    </div>
+  </div>
+
+  <!-- POMODORO controls -->
+  <div class="controls pm-only hidden" id="pm-controls">
+    <button id="pbtn-skip">skip</button>
+    <button id="pbtn-start">start</button>
+    <button id="pbtn-reset">reset</button>
+  </div>
+
+  <!-- STOPWATCH laps -->
+  <div class="laps sw-only" id="laps"></div>
+
+  <!-- POMODORO log -->
+  <div class="pomo-log pm-only hidden" id="pomo-log"></div>
+</div>
+
+<!-- TOTAL HOURS STUDIED PANEL -->
+<div class="hours-panel pm-only hidden" id="hours-panel">
+  <div class="hours-panel-box">
+    <div class="hours-panel-label">total<br>studied</div>
+    <div class="hours-panel-value" id="hours-value">0<span style="font-size:13px;color:var(--muted);">h</span> 00<span style="font-size:13px;color:var(--muted);">m</span></div>
+    <div class="hours-panel-sessions" id="hours-sessions">0 sessions</div>
+  </div>
+  <button class="hours-panel-reset" id="hours-reset">clear</button>
+</div>
+
+<button class="theme-toggle" id="btn-theme" title="Toggle dark mode">☽</button>
+
+<script>
+  const NS = 'http://www.w3.org/2000/svg';
+  const mainTicks = document.getElementById('main-ticks');
+  const subTicksG = document.getElementById('sub-ticks');
+
+  // ── TICKS ──────────────────────────────────────────────
+  for (let i = 0; i < 60; i++) {
+    const a = (i * 6 - 90) * Math.PI / 180;
+    const isMaj = i % 5 === 0;
+    const r1 = isMaj ? 108 : 114, r2 = 122;
+    const l = document.createElementNS(NS, 'line');
+    l.setAttribute('x1', 130 + r1 * Math.cos(a));
+    l.setAttribute('y1', 130 + r1 * Math.sin(a));
+    l.setAttribute('x2', 130 + r2 * Math.cos(a));
+    l.setAttribute('y2', 130 + r2 * Math.sin(a));
+    l.setAttribute('stroke', 'var(--fg)');
+    l.setAttribute('stroke-width', isMaj ? '1.5' : '0.6');
+    l.setAttribute('opacity', isMaj ? '0.45' : '0.18');
+    mainTicks.appendChild(l);
+
+    if (isMaj) {
+      const num = i === 0 ? 60 : i;
+      const tr = 96;
+      const t = document.createElementNS(NS, 'text');
+      t.setAttribute('x', 130 + tr * Math.cos(a));
+      t.setAttribute('y', 130 + tr * Math.sin(a) + 4);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('font-family', 'DM Mono, monospace');
+      t.setAttribute('font-size', '9');
+      t.setAttribute('fill', 'var(--muted)');
+      t.textContent = num;
+      mainTicks.appendChild(t);
+    }
+  }
+
+  for (let i = 0; i < 12; i++) {
+    const a = (i * 30 - 90) * Math.PI / 180;
+    const r1 = 26, r2 = 31;
+    const l = document.createElementNS(NS, 'line');
+    l.setAttribute('x1', 130 + r1 * Math.cos(a));
+    l.setAttribute('y1', 72 + r1 * Math.sin(a));
+    l.setAttribute('x2', 130 + r2 * Math.cos(a));
+    l.setAttribute('y2', 72 + r2 * Math.sin(a));
+    l.setAttribute('stroke', 'var(--muted)');
+    l.setAttribute('stroke-width', '0.7');
+    subTicksG.appendChild(l);
+  }
+
+  // ── UTILS ──────────────────────────────────────────────
+  function pad(n) { return String(Math.floor(n)).padStart(2, '0'); }
+  function rotPoint(cx, cy, r, deg) {
+    const a = (deg - 90) * Math.PI / 180;
+    return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+  }
+  function fmtDigital(ms) {
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    return `${pad(h)}:${pad(m)}:${pad(s)}`;
+  }
+  function fmtMMSS(ms) {
+    const m = Math.floor(ms / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    return `${pad(m)}:${pad(s)}`;
+  }
+
+  function updateHands(totalSec) {
+    const secDeg = (totalSec % 60) * 6;
+    const sp = rotPoint(130, 130, 90, secDeg);
+    const st = rotPoint(130, 130, -18, secDeg);
+    const sh = document.getElementById('sec-hand');
+    const stl = document.getElementById('sec-tail');
+    sh.setAttribute('x2', sp.x); sh.setAttribute('y2', sp.y);
+    stl.setAttribute('x2', st.x); stl.setAttribute('y2', st.y);
+  }
+
+  function resetHands() {
+    const sh = document.getElementById('sec-hand');
+    const stl = document.getElementById('sec-tail');
+    sh.setAttribute('x2', 130); sh.setAttribute('y2', 40);
+    stl.setAttribute('x2', 130); stl.setAttribute('y2', 148);
+    const subH = document.getElementById('sub-hand');
+    subH.setAttribute('x2', 130); subH.setAttribute('y2', 46);
+  }
+
+  // ── TAB SWITCHING ──────────────────────────────────────
+  let currentMode = 'sw';
+  document.getElementById('tab-sw').addEventListener('click', () => switchTab('sw'));
+  document.getElementById('tab-pm').addEventListener('click', () => switchTab('pm'));
+
+  function switchTab(mode) {
+    currentMode = mode;
+    document.getElementById('tab-sw').classList.toggle('active', mode === 'sw');
+    document.getElementById('tab-pm').classList.toggle('active', mode === 'pm');
+
+    document.querySelectorAll('.sw-only').forEach(el => el.classList.toggle('hidden', mode !== 'sw'));
+    document.querySelectorAll('.pm-only').forEach(el => el.classList.toggle('hidden', mode !== 'pm'));
+    // config wrap uses flex not block, restore properly
+    const cfg = document.getElementById('pm-config-wrap');
+    if (mode === 'pm') cfg.style.display = 'flex'; else cfg.style.display = 'none';
+
+    // hours panel visibility
+    const hp = document.getElementById('hours-panel');
+    if (mode === 'pm') { hp.style.display = 'flex'; setTimeout(() => hp.classList.add('visible'), 10); }
+    else { hp.classList.remove('visible'); setTimeout(() => hp.style.display = 'none', 300); }
+
+    if (mode === 'sw') {
+      document.getElementById('mode-label').textContent = 'elapsed';
+      // restore sw display
+      const now = swElapsed + (swRunning ? performance.now() - swStart : 0);
+      document.getElementById('digital').textContent = fmtDigital(now);
+      updateHands(now / 1000);
+      const hourDeg = ((now / 1000 % 43200) / 43200) * 360;
+      const subH = document.getElementById('sub-hand');
+      const mp = rotPoint(130, 72, 24, hourDeg);
+      subH.setAttribute('x2', mp.x); subH.setAttribute('y2', mp.y);
+    } else {
+      updatePomoDisplay();
+    }
+  }
+
+  // ── STOPWATCH ──────────────────────────────────────────
+  let swStart = 0, swElapsed = 0, swRunning = false, swRaf = null;
+  let lapStart = 0, lapTimes = [];
+
+  function renderSW() {
+    if (currentMode !== 'sw') { swRaf = requestAnimationFrame(renderSW); return; }
+    const now = swElapsed + (swRunning ? performance.now() - swStart : 0);
+    const totalSec = now / 1000;
+    updateHands(totalSec);
+    const hourDeg = ((totalSec % 43200) / 43200) * 360;
+    const mp = rotPoint(130, 72, 24, hourDeg);
+    const subH = document.getElementById('sub-hand');
+    subH.setAttribute('x2', mp.x); subH.setAttribute('y2', mp.y);
+    document.getElementById('digital').textContent = fmtDigital(now);
+    if (swRunning) swRaf = requestAnimationFrame(renderSW);
+  }
+
+  document.getElementById('btn-start').addEventListener('click', () => {
+    if (!swRunning) {
+      swStart = performance.now();
+      swRunning = true;
+      document.getElementById('btn-start').textContent = 'stop';
+      document.getElementById('btn-lap').disabled = false;
+      renderSW();
+    } else {
+      swElapsed += performance.now() - swStart;
+      swRunning = false;
+      cancelAnimationFrame(swRaf);
+      document.getElementById('btn-start').textContent = 'start';
+      document.getElementById('btn-lap').disabled = true;
+    }
+  });
+
+  document.getElementById('btn-lap').addEventListener('click', () => {
+    if (!swRunning) return;
+    const now = swElapsed + (performance.now() - swStart);
+    lapTimes.push(now - lapStart);
+    lapStart = now;
+    renderLaps();
+  });
+
+  document.getElementById('btn-reset').addEventListener('click', () => {
+    cancelAnimationFrame(swRaf);
+    swRunning = false; swElapsed = 0; swStart = 0; lapStart = 0; lapTimes = [];
+    document.getElementById('btn-start').textContent = 'start';
+    document.getElementById('btn-lap').disabled = true;
+    document.getElementById('digital').textContent = '00:00:00';
+    document.getElementById('laps').innerHTML = '';
+    resetHands();
+  });
+
+  function renderLaps() {
+    const lapsEl = document.getElementById('laps');
+    lapsEl.innerHTML = '';
+    const min = Math.min(...lapTimes), max = Math.max(...lapTimes);
+    [...lapTimes].reverse().forEach((t, i) => {
+      const n = lapTimes.length - i;
+      const div = document.createElement('div');
+      div.className = 'lap-item';
+      if (lapTimes.length > 1) {
+        if (t === min) div.classList.add('fastest');
+        else if (t === max) div.classList.add('slowest');
+      }
+      div.innerHTML = `<span class="lap-num">lap ${pad(n)}</span><span class="lap-time">${fmtDigital(t)}</span>`;
+      lapsEl.appendChild(div);
+    });
+  }
+
+  // ── POMODORO ───────────────────────────────────────────
+  const POMO_ARC_LEN = 766.6;
+
+  let pomoWorkMs = 40 * 60 * 1000;
+  let pomoBreakMs = 5 * 60 * 1000;
+  let pomoPhase = 'work';
+  let pomoRunning = false;
+  let pomoStart = 0;
+  let pomoElapsed = 0;
+  let pomoRaf = null;
+  let pomoSessions = 0;
+  let pomoLog = [];
+  let totalStudiedMs = 0; // accumulates completed focus session ms
+
+  function updateHoursPanel() {
+    const totalMin = Math.floor(totalStudiedMs / 60000);
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    document.getElementById('hours-value').innerHTML =
+      `${h}<span style="font-size:13px;color:var(--muted);">h</span> ${String(m).padStart(2,'0')}<span style="font-size:13px;color:var(--muted);">m</span>`;
+    const focusDone = pomoLog.filter(e => e.type === 'focus' && e.status === 'done').length;
+    document.getElementById('hours-sessions').textContent = `${focusDone} session${focusDone !== 1 ? 's' : ''}`;
+  }
+
+  // shared AudioContext
+  let audioCtx = null;
+  function getAudioCtx() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return audioCtx;
+  }
+
+  // alarm: focus session ends → break starts (warm descending chime)
+  function playBreakAlarm() {
+    try {
+      const ctx = getAudioCtx();
+      const t = ctx.currentTime;
+      [[880, 0], [660, 0.18], [550, 0.36]].forEach(([freq, delay]) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0, t + delay);
+        gain.gain.linearRampToValueAtTime(0.28, t + delay + 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + delay + 0.7);
+        osc.start(t + delay);
+        osc.stop(t + delay + 0.75);
+      });
+    } catch(e) {}
+  }
+
+  // alarm: break ends → focus starts (bright ascending ping)
+  function playFocusAlarm() {
+    try {
+      const ctx = getAudioCtx();
+      const t = ctx.currentTime;
+      [[440, 0], [660, 0.15], [880, 0.30], [1100, 0.45]].forEach(([freq, delay]) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = 'triangle';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0, t + delay);
+        gain.gain.linearRampToValueAtTime(0.22, t + delay + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + delay + 0.5);
+        osc.start(t + delay);
+        osc.stop(t + delay + 0.55);
+      });
+    } catch(e) {}
+  }
+
+  function pomoTotal() { return pomoPhase === 'work' ? pomoWorkMs : pomoBreakMs; }
+
+  function applyPomoTimes(workMin, breakMin) {
+    pomoWorkMs = Math.max(1, workMin) * 60000;
+    pomoBreakMs = Math.max(1, breakMin) * 60000;
+    document.getElementById('work-val').value = Math.max(1, workMin);
+    document.getElementById('break-val').value = Math.max(1, breakMin);
+    if (!pomoRunning) {
+      pomoElapsed = 0;
+      pomoPhase = 'work';
+      updatePomoDisplay();
+    }
+    // clear active preset if custom
+    const presets = document.querySelectorAll('.preset-btn');
+    let matched = false;
+    presets.forEach(b => {
+      if (parseInt(b.dataset.work) === Math.max(1, workMin) && parseInt(b.dataset.break) === Math.max(1, breakMin)) {
+        b.classList.add('active'); matched = true;
+      } else { b.classList.remove('active'); }
+    });
+  }
+
+  // stepper buttons
+  document.getElementById('work-up').addEventListener('click', () => {
+    const v = parseInt(document.getElementById('work-val').value) || 25;
+    applyPomoTimes(v + 1, parseInt(document.getElementById('break-val').value) || 5);
+  });
+  document.getElementById('work-dn').addEventListener('click', () => {
+    const v = parseInt(document.getElementById('work-val').value) || 25;
+    applyPomoTimes(v - 1, parseInt(document.getElementById('break-val').value) || 5);
+  });
+  document.getElementById('break-up').addEventListener('click', () => {
+    const v = parseInt(document.getElementById('break-val').value) || 5;
+    applyPomoTimes(parseInt(document.getElementById('work-val').value) || 25, v + 1);
+  });
+  document.getElementById('break-dn').addEventListener('click', () => {
+    const v = parseInt(document.getElementById('break-val').value) || 5;
+    applyPomoTimes(parseInt(document.getElementById('work-val').value) || 25, v - 1);
+  });
+
+  // direct input edit
+  document.getElementById('work-val').addEventListener('change', () => {
+    applyPomoTimes(parseInt(document.getElementById('work-val').value) || 25, parseInt(document.getElementById('break-val').value) || 5);
+  });
+  document.getElementById('break-val').addEventListener('change', () => {
+    applyPomoTimes(parseInt(document.getElementById('work-val').value) || 25, parseInt(document.getElementById('break-val').value) || 5);
+  });
+
+  // presets
+  document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (pomoRunning) return;
+      applyPomoTimes(parseInt(btn.dataset.work), parseInt(btn.dataset.break));
+    });
+  });
+
+  function updatePomoDisplay() {
+    const total = pomoTotal();
+    const used = pomoElapsed + (pomoRunning ? performance.now() - pomoStart : 0);
+    const remaining = Math.max(0, total - used);
+    const frac = 1 - remaining / total;
+
+    const arc = document.getElementById('pomo-arc');
+    arc.setAttribute('stroke-dashoffset', POMO_ARC_LEN * (1 - frac));
+    arc.setAttribute('stroke', pomoPhase === 'work' ? 'var(--fg)' : 'var(--accent)');
+
+    document.getElementById('digital').textContent = fmtMMSS(remaining);
+    updateHands(frac * 60);
+
+    const sessionDeg = ((pomoSessions % 12) / 12) * 360;
+    const mp = rotPoint(130, 72, 24, sessionDeg);
+    document.getElementById('sub-hand').setAttribute('x2', mp.x);
+    document.getElementById('sub-hand').setAttribute('y2', mp.y);
+
+    document.getElementById('mode-label').textContent = pomoPhase === 'work' ? 'focus' : 'break';
+  }
+
+  function renderPomo() {
+    if (currentMode !== 'pm') { pomoRaf = requestAnimationFrame(renderPomo); return; }
+    const total = pomoTotal();
+    const used = pomoElapsed + (pomoRunning ? performance.now() - pomoStart : 0);
+
+    if (used >= total) {
+      pomoElapsed = 0;
+      pomoStart = performance.now();
+      if (pomoPhase === 'work') {
+        pomoSessions++;
+        totalStudiedMs += pomoWorkMs;
+        pomoLog.unshift({ type: 'focus', status: 'done' });
+        pomoPhase = 'break';
+        playBreakAlarm();
+      } else {
+        pomoLog.unshift({ type: 'break', status: 'done' });
+        pomoPhase = 'work';
+        playFocusAlarm();
+      }
+      renderPomoLog();
+      updateHoursPanel();
+    }
+
+    updatePomoDisplay();
+    if (pomoRunning) pomoRaf = requestAnimationFrame(renderPomo);
+  }
+
+  document.getElementById('pbtn-start').addEventListener('click', () => {
+    if (!pomoRunning) {
+      try { getAudioCtx().resume(); } catch(e) {}
+      pomoStart = performance.now();
+      pomoRunning = true;
+      document.getElementById('pbtn-start').textContent = 'pause';
+      renderPomo();
+    } else {
+      pomoElapsed += performance.now() - pomoStart;
+      pomoRunning = false;
+      cancelAnimationFrame(pomoRaf);
+      document.getElementById('pbtn-start').textContent = 'start';
+    }
+  });
+
+  document.getElementById('pbtn-skip').addEventListener('click', () => {
+    pomoLog.unshift({ type: pomoPhase, status: 'skip' });
+    if (pomoPhase === 'work') {
+      pomoPhase = 'break';
+      playBreakAlarm();
+    } else {
+      pomoSessions++;
+      pomoPhase = 'work';
+      playFocusAlarm();
+    }
+    pomoElapsed = 0;
+    if (pomoRunning) pomoStart = performance.now();
+    renderPomoLog();
+    updatePomoDisplay();
+    updateHoursPanel();
+  });
+
+  document.getElementById('pbtn-reset').addEventListener('click', () => {
+    cancelAnimationFrame(pomoRaf);
+    pomoRunning = false; pomoElapsed = 0; pomoStart = 0;
+    pomoPhase = 'work'; pomoSessions = 0; pomoLog = []; totalStudiedMs = 0;
+    document.getElementById('pbtn-start').textContent = 'start';
+    document.getElementById('pomo-log').innerHTML = '';
+    document.getElementById('pomo-arc').setAttribute('stroke-dashoffset', POMO_ARC_LEN);
+    resetHands();
+    document.getElementById('digital').textContent = fmtMMSS(pomoWorkMs);
+    document.getElementById('mode-label').textContent = 'focus';
+    updateHoursPanel();
+  });
+
+  function renderPomoLog() {
+    const el = document.getElementById('pomo-log');
+    el.innerHTML = '';
+    pomoLog.slice(0, 10).forEach((entry) => {
+      const div = document.createElement('div');
+      div.className = 'pomo-entry';
+      div.innerHTML = `<span class="entry-type">${entry.type}</span><span class="${entry.status === 'done' ? 'entry-done' : 'entry-skip'}">${entry.status}</span>`;
+      el.appendChild(div);
+    });
+  }
+
+  // ── HOURS CLEAR ────────────────────────────────────────
+  document.getElementById('hours-reset').addEventListener('click', () => {
+    totalStudiedMs = 0;
+    pomoLog = pomoLog.filter(e => !(e.type === 'focus' && e.status === 'done'));
+    renderPomoLog();
+    updateHoursPanel();
+  });
+
+  // ── THEME ──────────────────────────────────────────────
+  document.getElementById('btn-theme').addEventListener('click', () => {
+    const dark = document.documentElement.classList.toggle('dark');
+    document.getElementById('btn-theme').textContent = dark ? '○' : '☽';
+  });
+
+  // ── INIT ───────────────────────────────────────────────
+  document.getElementById('digital').textContent = '00:00:00';
+  document.getElementById('hours-panel').style.display = 'none';
+  updateHoursPanel();
+</script>
+</body>
+</html>
